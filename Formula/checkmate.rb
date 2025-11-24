@@ -4,7 +4,7 @@ class Checkmate < Formula
   desc "A todos.txt TUI client"
   homepage "https://github.com/trly/checkmate"
   url "https://github.com/trly/checkmate/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "REPLACE_WITH_SHA256"
+  sha256 "f14cb4da76fbd86b1ce5397c24ba8eaa5928a7b98b270c6cbbc0be50ae0c41df"
   license "MIT"
   head "https://github.com/trly/checkmate.git", branch: "main"
 

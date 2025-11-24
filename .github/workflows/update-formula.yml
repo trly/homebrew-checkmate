@@ -5,7 +5,7 @@ on:
 
 jobs:
   update:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     permissions:
       contents: write
     steps:
@@ -13,24 +13,59 @@ jobs:
         with:
           token: ${{ secrets.PAT_TOKEN }}
       
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@master
+
       - name: Update formula
         run: |
           VERSION="${{ github.event.client_payload.version }}"
           SHA256="${{ github.event.client_payload.sha256 }}"
           
-          # Update URL to point to the GitHub Release asset (sdist built by uv)
-          # Note: Package name is dev-trly-checkmate, so sdist is dev_trly_checkmate-VERSION.tar.gz
-          NEW_URL="https://github.com/trly/checkmate/releases/download/v$VERSION/dev_trly_checkmate-$VERSION.tar.gz"
-          
-          sed -i "s|url \".*\"|url \"$NEW_URL\"|" Formula/checkmate.rb
-          sed -i "s/sha256 \".*\"/sha256 \"$SHA256\"/" Formula/checkmate.rb
-          
-          # Optional: Update dependencies (resources) using poet if we want to be super fancy,
-          # but that requires installing the new version first. 
-          # For now, we just update the main package version/sha.
-          
+          # Configure git
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Setup Tap
+          # We need to link the current repository into the Homebrew Tap directory
+          # so that 'brew update-python-resources' can find and edit the formula.
+          mkdir -p $(brew --repo)/Library/Taps/trly
+          ln -s $GITHUB_WORKSPACE $(brew --repo)/Library/Taps/trly/homebrew-checkmate
+          
+          # Update URL and SHA256 for the main package first
+          # We use the official PyPI source URL which redirects to the correct file
+          # Package name on PyPI is trly-checkmate, so sdist is trly_checkmate-VERSION.tar.gz
+          NEW_URL="https://pypi.io/packages/source/t/trly-checkmate/trly_checkmate-$VERSION.tar.gz"
+          
+          # Wait for PyPI to update (API availability check)
+          # This prevents race conditions where the file exists but the API (used by brew) isn't updated yet
+          echo "Waiting for PyPI to reflect version $VERSION..."
+          MAX_RETRIES=20
+          SLEEP_SECONDS=15
+          for ((i=1; i<=MAX_RETRIES; i++)); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/trly-checkmate/$VERSION/json")
+            if [ "$HTTP_CODE" -eq 200 ]; then
+              echo "Version $VERSION found on PyPI."
+              break
+            fi
+            echo "Attempt $i: Version not found yet (HTTP $HTTP_CODE). Sleeping $SLEEP_SECONDS..."
+            sleep $SLEEP_SECONDS
+          done
+          
+          if [ "$HTTP_CODE" -ne 200 ]; then
+             echo "Error: Version $VERSION not found on PyPI API after waiting."
+             exit 1
+          fi
+
+          # macOS sed requires an empty string for in-place editing backup extension
+          sed -i "" "s|^  url \".*\"|  url \"$NEW_URL\"|" Formula/checkmate.rb
+          sed -i "" "s/^  sha256 \".*\"/  sha256 \"$SHA256\"/" Formula/checkmate.rb
+          
+          # Update dependencies (resources) using Homebrew's internal tool
+          # We specify the package name because the formula name (checkmate) differs from PyPI (trly-checkmate)
+          brew update-python-resources trly/checkmate/checkmate --package-name trly-checkmate
+          
+          # Commit and push
           git add Formula/checkmate.rb
           git commit -m "checkmate $VERSION" || exit 0
           git push
