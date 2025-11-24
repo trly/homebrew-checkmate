@@ -68,4 +68,4 @@ jobs:
           # Commit and push
           git add Formula/checkmate.rb
           git commit -m "checkmate $VERSION" || exit 0
-          git push
+          git push origin main
