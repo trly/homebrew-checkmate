@@ -1,0 +1,36 @@
+name: Update Formula
+on:
+  repository_dispatch:
+    types: [checkmate-release]
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+      
+      - name: Update formula
+        run: |
+          VERSION="${{ github.event.client_payload.version }}"
+          SHA256="${{ github.event.client_payload.sha256 }}"
+          
+          # Update URL to point to the GitHub Release asset (sdist built by uv)
+          # Note: Package name is dev-trly-checkmate, so sdist is dev_trly_checkmate-VERSION.tar.gz
+          NEW_URL="https://github.com/trly/checkmate/releases/download/v$VERSION/dev_trly_checkmate-$VERSION.tar.gz"
+          
+          sed -i "s|url \".*\"|url \"$NEW_URL\"|" Formula/checkmate.rb
+          sed -i "s/sha256 \".*\"/sha256 \"$SHA256\"/" Formula/checkmate.rb
+          
+          # Optional: Update dependencies (resources) using poet if we want to be super fancy,
+          # but that requires installing the new version first. 
+          # For now, we just update the main package version/sha.
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/checkmate.rb
+          git commit -m "checkmate $VERSION" || exit 0
+          git push
